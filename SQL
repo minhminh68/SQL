@@ -1,0 +1,77 @@
+Declare @MinLot int = 3;
+Declare @CountLot int = 8;
+Declare @MinCredit int = 100000;
+Declare @DiffTime int = 30;
+Declare @DiffLot int =0.5;
+Declare @SumProfit int = 100000;
+Declare @DiffCredit int = 50000;
+Declare @DiffBuySell int = 30;
+Declare @Diffdate int = 7;
+Declare @Credit int = 500000;
+
+With B as
+(Select T.ID,
+		T.Currency, 
+		sum(T.Lots) as SL_buy,
+		sum(T.Profit) as Profit_Buy, 
+		count(T.Lots) as CL_Buy,
+		AVG(A.Credit) as BC,
+		min(T.Date) as Min_time_buy,
+		max(T.Date) as Max_time_buy
+From T join A on T.ID=A.ID
+Where T.Type = 'buy'
+		and T.Reason <> 'expert'
+		and Currency not like '%fx'
+Group by T.ID, T.Currency
+Having sum(T.Lots) >= @MinLot and count(T.Lots) <= @CountLot
+		and DATEDIFF(MINUTE, min(T.Date),max(T.Date)) <= @DiffTime 
+		and AVG(A.Credit) >= @MinCredit)
+, S as
+(Select T.ID,
+		T.Currency, 
+		sum(T.Lots) as SL_sell,
+		sum(T.Profit) as Profit_Sell, 
+		count(T.Lots) as CL_sell,
+		AVG(A.Credit) as SC,
+		min(T.Date) as Min_time_sell,
+		max(T.Date) as Max_time_sell
+From T join A on T.ID=A.ID
+Where T.Type = 'sell'
+		and T.Reason <> 'expert'
+		and Currency not like '%fx'
+Group by T.ID, T.Currency
+Having sum(T.Lots) >= @MinLot and count(T.Lots) <= @CountLot
+		and DATEDIFF(MINUTE, min(T.Date),max(T.Date)) <= @DiffTime 
+		and AVG(A.Credit) >= @MinCredit)
+, BP as
+(Select ID, sum(Profit) as SBP
+ From T
+ Group by ID)
+, SP as
+(Select ID, sum(Profit) as SSP
+ From T
+ Group by ID)
+
+Select Distinct B.ID as B_ID, 
+				S.ID as S_ID, 
+				B.Currency,
+				B.SL_buy,
+				S.SL_sell,
+				B.Profit_Buy,
+				S.Profit_Sell,
+				B.BC as Buy_credit,
+				S.SC as Sell_credit
+From B join BP
+on B.ID=BP.ID and B.Profit_Buy=BP.SBP
+join S
+on B.Currency = S.Currency
+join SP
+on S.ID=SP.ID and S.Profit_Sell=SP.SSP
+Where
+DATEDIFF(DAY, Max_time_buy, GETDATE()) <= @Diffdate
+and abs(DATEDIFF(MINUTE,B.Min_time_buy,S.Max_time_sell)) <= @DiffBuySell
+and abs(DATEDIFF(MINUTE,B.Max_time_buy,S.Min_time_sell)) <= @DiffBuySell
+and abs(B.SL_buy=S.SL_sell) <= @DiffLot
+and (abs(B.BC = S.SC) <= @DiffCredit or (B.BC >= @Credit and S.SC >= @Credit))
+and abs(B.Profit_Buy = S.Profit_Sell) <= @SumProfit
+Order by 4 DESC 5
